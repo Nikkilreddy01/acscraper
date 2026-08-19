@@ -202,11 +202,11 @@
         }
         .console-controls {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr auto auto;
+            grid-template-columns: 2fr 1.2fr 1.2fr 1.2fr auto auto;
             gap: 12px;
             align-items: end;
         }
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
             .console-controls {
                 grid-template-columns: 1fr 1fr;
             }
@@ -479,7 +479,9 @@
         .source-linkedin { background: rgba(14, 116, 144, 0.15); color: #38bdf8; border: 1px solid rgba(14, 116, 144, 0.3); }
         .source-hackernews { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
         .source-indeed { background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3); }
-        .source-naukri { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .source-glassdoor { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .source-ziprecruiter { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
+        .source-naukri { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.3); }
 
         .tag-pill {
             font-size: 0.75rem;
@@ -666,9 +668,24 @@
                         <option value="all" selected>All Sources (Aggregated Pipeline)</option>
                         <option value="remoteok">RemoteOK (Live API — 100+ Jobs)</option>
                         <option value="linkedin">LinkedIn (Stealth Guest API)</option>
+                        <option value="indeed">Indeed (Mosaic Engine — 40+ Jobs)</option>
+                        <option value="glassdoor">Glassdoor (GraphQL Search)</option>
                         <option value="hackernews">Hacker News (Who is Hiring API)</option>
-                        <option value="indeed">Indeed (HTML / Browser Fallback)</option>
-                        <option value="naukri">Naukri (XHR Interception / Playwright)</option>
+                        <option value="ziprecruiter">ZipRecruiter (Mobile & Web API)</option>
+                        <option value="naukri">Naukri (XHR Interception / DOM)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="timeframe-select">Timeline Filter</label>
+                    <select id="timeframe-select" class="form-select">
+                        <option value="all" selected>Any Time (All)</option>
+                        <option value="24h">Past 24 Hours</option>
+                        <option value="7d">Past 7 Days</option>
+                        <option value="1m">Past 1 Month</option>
+                        <option value="3m">Past 3 Months</option>
+                        <option value="6m">Past 6 Months</option>
+                        <option value="1y">Past 1 Year</option>
                     </select>
                 </div>
 
@@ -794,6 +811,7 @@
     <script>
         let allJobsData = [];
         const sourceSelect = document.getElementById('source-select');
+        const timeframeSelect = document.getElementById('timeframe-select');
         const btnFetch = document.getElementById('btn-fetch');
         const btnForce = document.getElementById('btn-force');
         const clientSearch = document.getElementById('client-search');
@@ -834,6 +852,8 @@
             if (s.includes('linkedin')) return 'source-linkedin';
             if (s.includes('hacker') || s.includes('hn')) return 'source-hackernews';
             if (s.includes('indeed')) return 'source-indeed';
+            if (s.includes('glassdoor')) return 'source-glassdoor';
+            if (s.includes('ziprecruiter') || s.includes('zip_recruiter') || s.includes('zr')) return 'source-ziprecruiter';
             if (s.includes('naukri')) return 'source-naukri';
             return 'source-remoteok';
         }
@@ -907,9 +927,13 @@
 
         async function fetchJobs(force = false) {
             const src = sourceSelect.value;
+            const tf = timeframeSelect.value;
             const srcLabel = sourceSelect.options[sourceSelect.selectedIndex].text.split(' (')[0];
+            const tfLabel = timeframeSelect.options[timeframeSelect.selectedIndex].text;
+            const roleVal = (keywordInput.value || '').trim();
+            const locVal = (locationInput.value || '').trim();
             
-            feedTitle.textContent = `Live Postings — ${srcLabel}`;
+            feedTitle.textContent = `Live Postings — ${srcLabel} (${tfLabel})`;
             metricSource.textContent = srcLabel;
             btnFetch.disabled = true;
             btnForce.disabled = true;
@@ -918,15 +942,19 @@
                 <div class="loading-state">
                     <div class="spinner"></div>
                     <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Ingesting live postings from ${escapeHtml(srcLabel)}...</h3>
-                    <p style="color: var(--text-muted); font-size: 0.85rem;">Bypassing anti-bot checks with Chrome 145 TLS fingerprinting.</p>
+                    <p style="color: var(--text-muted); font-size: 0.85rem;">Applying timeframe filter: ${escapeHtml(tfLabel)} with Chrome 145 TLS spoofing.</p>
                 </div>
             `;
 
             const startTime = performance.now();
-            setHud(`Connecting to <span class="log-highlight">${srcLabel}</span> via TLS fingerprint impersonation...`, '0.05s');
+            setHud(`Connecting to <span class="log-highlight">${srcLabel}</span> [Timeline: ${tfLabel}] via TLS impersonation...`, '0.05s');
 
             try {
-                const url = `/api/scrape?source=${encodeURIComponent(src)}${force ? '&force=true' : ''}`;
+                let url = `/api/scrape?source=${encodeURIComponent(src)}&timeframe=${encodeURIComponent(tf)}`;
+                if (roleVal) url += `&query=${encodeURIComponent(roleVal)}`;
+                if (locVal) url += `&location=${encodeURIComponent(locVal)}`;
+                if (force) url += '&force=true';
+
                 const res = await fetch(url);
                 const elapsedMs = Math.round(performance.now() - startTime);
                 metricLatency.textContent = `${elapsedMs} ms`;
@@ -946,7 +974,7 @@
                 allJobsData = data.jobs || [];
 
                 const count = allJobsData.length;
-                setHud(`✅ Successfully ingested <span class="log-success">${count} listings</span> from ${srcLabel}`, `${(elapsedMs / 1000).toFixed(2)}s`, 'success');
+                setHud(`✅ Successfully ingested <span class="log-success">${count} listings</span> from ${srcLabel} [${tfLabel}]`, `${(elapsedMs / 1000).toFixed(2)}s`, 'success');
 
                 filterJobs();
             } catch (err) {

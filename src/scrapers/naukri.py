@@ -4,12 +4,12 @@ import asyncio
 import json
 import logging
 import re
-from typing import Optional
+from typing import Optional, List
 
 from curl_cffi.requests import AsyncSession
 
 from ._stealth import stealth_session, STEALTH_HEADERS, _jittered_sleep, launch_browser
-from .base import BaseScraper, JobListing
+from .base import BaseScraper, JobListing, timeframe_to_days
 
 logger = logging.getLogger(__name__)
 
@@ -173,11 +173,17 @@ class NaukriScraper(BaseScraper):
         self.max_pages = max_pages
         self.proxy = proxy
 
-    async def fetch(self, _session=None) -> list[JobListing]:
+    async def fetch(
+        self,
+        _session=None,
+        timeframe: str = "all",
+        query: str | None = None,
+        location: str | None = None,
+    ) -> List[JobListing]:
         try:
             return await _playwright_fetch_naukri(
-                query=self.keywords,
-                location=self.location,
+                query=query or self.keywords,
+                location=location or self.location,
             )
         except Exception as exc:
             logger.warning("Naukri scraper failed: %s", exc)

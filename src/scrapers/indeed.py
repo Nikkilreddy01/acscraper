@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
-from typing import Optional
+from typing import Optional, List
 
 from curl_cffi.requests import AsyncSession
 
 from ._stealth import stealth_session, STEALTH_HEADERS, _jittered_sleep, launch_browser
-from .base import BaseScraper, JobListing
+from .base import BaseScraper, JobListing, timeframe_to_days
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,7 @@ def _clean(s: Optional[str]) -> Optional[str]:
 def _parse_indeed_mosaic(html: str) -> list[JobListing]:
     """Parse Indeed's embedded JSON mosaic-provider-jobcards data."""
     out: list[JobListing] = []
-    
-    # Extract mosaicProviderJobCards JSON
+
     m = re.search(
         r'window\.mosaic\.providerData\[["\']mosaic-provider-jobcards["\']\]\s*=\s*({.*?});\s*</script>',
         html,
@@ -54,7 +54,7 @@ def _parse_indeed_mosaic(html: str) -> list[JobListing]:
                 company = _clean(item.get("company"))
                 location = _clean(item.get("formattedLocation") or item.get("jobLocationCity"))
                 snippet = _clean(item.get("snippet"))
-                
+
                 # Check salary if present
                 salary_model = item.get("salarySnippet") or {}
                 salary_text = _clean(salary_model.get("text")) if isinstance(salary_model, dict) else None
@@ -62,7 +62,7 @@ def _parse_indeed_mosaic(html: str) -> list[JobListing]:
                     title = f"{title} ({salary_text})"
 
                 url = f"https://www.indeed.com/viewjob?jk={jobkey}" if jobkey else "https://www.indeed.com"
-                
+
                 out.append(
                     JobListing(
                         id=f"indeed_{jobkey}",
@@ -78,31 +78,13 @@ def _parse_indeed_mosaic(html: str) -> list[JobListing]:
         except Exception as exc:
             logger.warning("Failed parsing Indeed mosaic data: %s", exc)
 
-    # Fallback regex if mosaic JSON wasn't matched
-    if not out:
-        title_matches = list(re.finditer(r'<h2[^>]*class="[^"]*jobTitle[^"]*"[^>]*>.*?<span[^>]*>(.*?)</span>', html, re.S))
-        for idx, tm in enumerate(title_matches):
-            raw_title = _clean(re.sub(r'<[^>]+>', '', tm.group(1)))
-            if raw_title:
-                out.append(
-                    JobListing(
-                        id=f"indeed_regex_{idx}",
-                        title=raw_title,
-                        company="Indeed Employer",
-                        location="Remote",
-                        url="https://www.indeed.com",
-                        source="indeed",
-                        posted_at=None,
-                        description_snippet="Software engineering position on Indeed",
-                    )
-                )
-
     return out
 
 
 async def _playwright_fetch_indeed(
     query: str = "software engineer",
     location: str = "Remote",
+    fromage: Optional[int] = None,
     timeout: int = 30,
 ) -> list[JobListing]:
     """Fallback: render Indeed in headless browser and scrape job cards."""
@@ -119,6 +101,9 @@ async def _playwright_fetch_indeed(
         page = await context.new_page()
 
         url = f"https://www.indeed.com/jobs?q={query.replace(' ', '+')}&l={location.replace(' ', '+')}"
+        if fromage:
+            url += f"&fromage={fromage}"
+
         await page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
         await asyncio.sleep(3)
 
@@ -139,7 +124,7 @@ async def _playwright_fetch_indeed(
                     loc_el = card.locator("[data-testid='text-location'], .companyLocation").first
                     loc = _clean(await loc_el.inner_text()) if await loc_el.count() > 0 else location
                     jk = await card.get_attribute("data-jk") or str(idx)
-                    
+
                     jobs.append(
                         JobListing(
                             id=f"indeed_pw_{jk}",
@@ -182,8 +167,17 @@ class IndeedScraper(BaseScraper):
         self.max_pages = max_pages
         self.proxy = proxy
 
-    async def fetch(self, _session=None) -> list[JobListing]:
+    async def fetch(
+        self,
+        _session=None,
+        timeframe: str = "all",
+        query: str | None = None,
+        location: str | None = None,
+    ) -> List[JobListing]:
         jobs: list[JobListing] = []
+        q = query or self.query
+        loc = location or self.location
+        fromage = timeframe_to_days(timeframe)
 
         # Strategy 1: Fast TLS impersonation
         async with stealth_session(impersonate="chrome120", proxy=self.proxy) as client:
@@ -191,10 +185,13 @@ class IndeedScraper(BaseScraper):
                 start = page_idx * 10
                 url = "https://www.indeed.com/jobs"
                 params = {
-                    "q": self.query,
-                    "l": self.location,
+                    "q": q,
+                    "l": loc,
                     "start": start,
                 }
+                if fromage:
+                    params["fromage"] = fromage
+
                 try:
                     resp = await client.get(url, params=params, timeout=15)
                     if resp.status_code == 200:
@@ -208,7 +205,7 @@ class IndeedScraper(BaseScraper):
 
         # Strategy 2: Headless Playwright Fallback
         try:
-            pw_jobs = await _playwright_fetch_indeed(self.query, self.location)
+            pw_jobs = await _playwright_fetch_indeed(q, loc, fromage=fromage)
             return pw_jobs
         except Exception as exc:
             logger.warning("Indeed Playwright fallback failed: %s", exc)
