@@ -1,5 +1,6 @@
 fastapi
-uvicorn
+uvicorn[standard]
+jinja2
 httpx
 curl-cffi
 tenacity
