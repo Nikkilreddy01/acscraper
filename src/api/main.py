@@ -1,15 +1,19 @@
 import asyncio
+import time
+import logging
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict, Any
 
 from src.scrapers.remoteok import RemoteOKScraper
 from src.scrapers.linkedin import LinkedInScraper
 from src.scrapers.indeed import IndeedScraper
 from src.scrapers.naukri import NaukriScraper
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AcScraper", version="0.3.0")
 
@@ -22,11 +26,50 @@ SCRAPERS = {
     "naukri": NaukriScraper(),
 }
 
+# In-memory cache: {source_name: {"jobs": [...], "timestamp": float}}
+CACHE: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL = 300  # 5 minutes
+
 
 class ScrapeResponse(BaseModel):
     source: str
     count: int
     jobs: List[dict]
+
+
+async def fetch_single_scraper(name: str, scraper, timeout_seconds: float = 6.0) -> List[dict]:
+    """Fetch jobs from a scraper with cache and strict per-scraper timeout."""
+    now = time.time()
+    cached = CACHE.get(name)
+    if cached and (now - cached["timestamp"] < CACHE_TTL) and cached["jobs"]:
+        return cached["jobs"]
+
+    try:
+        raw_jobs = await asyncio.wait_for(scraper.fetch(None), timeout=timeout_seconds)
+        dumped = [j.model_dump() for j in raw_jobs] if raw_jobs else []
+        if dumped:
+            CACHE[name] = {"jobs": dumped, "timestamp": now}
+            return dumped
+        elif cached and cached["jobs"]:
+            # Fall back to existing cached items if available
+            return cached["jobs"]
+        return []
+    except Exception as exc:
+        logger.warning("Scraper %s error or timeout: %s", name, exc)
+        if cached and cached["jobs"]:
+            return cached["jobs"]
+        return []
+
+
+@app.on_event("startup")
+async def preload_cache():
+    """Warm up cache on server start in background."""
+    asyncio.create_task(warm_cache())
+
+
+async def warm_cache():
+    tasks = [fetch_single_scraper(name, scraper, timeout_seconds=8.0) for name, scraper in SCRAPERS.items()]
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -37,13 +80,13 @@ async def home(request: Request):
 @app.get("/api/scrape", response_model=ScrapeResponse)
 async def scrape(source: str = Query(default="all")):
     if source == "all":
-        all_jobs = []
-        tasks = [scraper.fetch(None) for scraper in SCRAPERS.values()]
+        tasks = [fetch_single_scraper(name, scraper, timeout_seconds=5.0) for name, scraper in SCRAPERS.items()]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        all_jobs = []
         for res in results:
             if isinstance(res, list):
-                for j in res:
-                    all_jobs.append(j.model_dump())
+                all_jobs.extend(res)
+
         return ScrapeResponse(
             source="all",
             count=len(all_jobs),
@@ -56,17 +99,12 @@ async def scrape(source: str = Query(default="all")):
             status_code=400,
             content={"error": f"Unknown source '{source}'. Available: {sorted(SCRAPERS)} + ['all']"},
         )
-    try:
-        jobs = await scraper.fetch(None)
-    except Exception as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": f"{source} unavailable: {exc}"},
-        )
+
+    jobs = await fetch_single_scraper(source, scraper, timeout_seconds=8.0)
     return ScrapeResponse(
         source=source,
         count=len(jobs),
-        jobs=[j.model_dump() for j in jobs],
+        jobs=jobs,
     )
 
 

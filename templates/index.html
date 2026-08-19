@@ -158,6 +158,30 @@
             text-align: center;
             color: var(--muted);
             padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top-color: var(--accent);
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .badge-count {
+            font-size: 0.9rem;
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent);
+            padding: 2px 10px;
+            border-radius: 999px;
+            margin-left: 8px;
+            font-weight: 600;
         }
         footer {
             padding: 40px 0 80px;
@@ -226,19 +250,21 @@
         async function loadJobs() {
             const src = sourceSelect.value;
             const feedTitle = document.getElementById('feed-title');
-            feedTitle.textContent = 'Live feed — ' + sourceSelect.options[sourceSelect.selectedIndex].text.split(' (')[0];
-            jobsList.innerHTML = '<div class="loading">Loading latest postings…</div>';
+            const cleanTitle = sourceSelect.options[sourceSelect.selectedIndex].text.split(' (')[0];
+            feedTitle.innerHTML = 'Live feed — ' + escapeHtml(cleanTitle);
+            jobsList.innerHTML = '<div class="loading"><div class="spinner"></div><span>Loading live postings…</span></div>';
             try {
                 const res = await fetch('/api/scrape?source=' + encodeURIComponent(src));
                 const data = await res.json();
                 if (!res.ok) {
-                    jobsList.innerHTML = '<div class="loading">' + escapeHtml(data.error || 'Error') + '</div>';
+                    jobsList.innerHTML = '<div class="loading"><span>' + escapeHtml(data.error || 'Error loading jobs') + '</span></div>';
                     return;
                 }
-                if (data.jobs.length === 0) {
-                    jobsList.innerHTML = '<div class="loading">No jobs right now — the source may be rate-limiting or slowly updating.</div>';
+                if (!data.jobs || data.jobs.length === 0) {
+                    jobsList.innerHTML = '<div class="loading"><span>No jobs right now — the source may be rate-limiting or updating.</span></div>';
                     return;
                 }
+                feedTitle.innerHTML = `Live feed — ${escapeHtml(cleanTitle)} <span class="badge-count">${data.jobs.length} jobs</span>`;
                 jobsList.innerHTML = data.jobs.map(j => `
                     <a class="job-card" href="${escapeHtml(j.url)}" target="_blank" rel="noopener">
                         <div class="job-title">${escapeHtml(j.title)}</div>
@@ -249,7 +275,7 @@
                     </a>
                 `).join('');
             } catch (err) {
-                jobsList.innerHTML = '<div class="loading">Could not load jobs. Try again later.</div>';
+                jobsList.innerHTML = '<div class="loading"><span>Could not load jobs. Try again later.</span></div>';
             }
         }
 
