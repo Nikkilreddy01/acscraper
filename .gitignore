@@ -1,6 +1,7 @@
 *.pyc
 __pycache__
 .env
+.render_api_key
 node_modules
 dist
 .venv
