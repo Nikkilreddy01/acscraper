@@ -7,12 +7,13 @@ from .base import BaseScraper, JobListing
 
 
 class HNAlgoliaScraper(BaseScraper):
-    source_name: str = "hacker_news_who_is_hiring"
+    source_name: str = "hackernews"
 
-    def __init__(self, query_tags: str = "story,who_is_hiring", hits_per_page: int = 200):
-        self.url = "https://hn.algolia.com/api/v1/search_by_date"
+    def __init__(self, query: str = "hiring", hits_per_page: int = 50):
+        self.url = "https://hn.algolia.com/api/v1/search"
         self.params = {
-            "tags": query_tags,
+            "query": query,
+            "tags": "story",
             "hitsPerPage": hits_per_page,
         }
 
