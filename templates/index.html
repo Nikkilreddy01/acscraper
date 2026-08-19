@@ -188,6 +188,7 @@
             <div class="controls">
                 <label for="source-select">Source:</label>
                 <select id="source-select">
+                    <option value="all" selected>All Sources (Aggregated)</option>
                     <option value="remoteok">RemoteOK (API)</option>
                     <option value="linkedin">LinkedIn (REST API)</option>
                     <option value="indeed">Indeed (HTML)</option>
@@ -195,7 +196,7 @@
                 </select>
                 <span id="source-note" style="color: var(--muted); font-size: 0.75rem;"></span>
             </div>
-            <h2 id="feed-title">Live feed — RemoteOK</h2>
+            <h2 id="feed-title">Live feed — All Sources</h2>
             <div id="jobs-list"><div class="loading">Loading latest postings…</div></div>
         </section>
 

@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
@@ -34,12 +35,26 @@ async def home(request: Request):
 
 
 @app.get("/api/scrape", response_model=ScrapeResponse)
-async def scrape(source: str = Query(default="remoteok")):
+async def scrape(source: str = Query(default="all")):
+    if source == "all":
+        all_jobs = []
+        tasks = [scraper.fetch(None) for scraper in SCRAPERS.values()]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for res in results:
+            if isinstance(res, list):
+                for j in res:
+                    all_jobs.append(j.model_dump())
+        return ScrapeResponse(
+            source="all",
+            count=len(all_jobs),
+            jobs=all_jobs,
+        )
+
     scraper = SCRAPERS.get(source)
     if not scraper:
         return JSONResponse(
             status_code=400,
-            content={"error": f"Unknown source '{source}'. Available: {sorted(SCRAPERS)}"},
+            content={"error": f"Unknown source '{source}'. Available: {sorted(SCRAPERS)} + ['all']"},
         )
     try:
         jobs = await scraper.fetch(None)
