@@ -33,8 +33,12 @@ class HNAlgoliaScraper(BaseScraper):
             return None
         return " ".join(text.split())
 
-    async def fetch(self, session) -> List[JobListing]:
-        data = await self._get(session)
+    async def fetch(self, session=None) -> List[JobListing]:
+        if session is None:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                data = await self._get(client)
+        else:
+            data = await self._get(session)
         hits = data.get("hits", [])
         out: List[JobListing] = []
         for h in hits:

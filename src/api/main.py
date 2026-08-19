@@ -12,6 +12,7 @@ from src.scrapers.remoteok import RemoteOKScraper
 from src.scrapers.linkedin import LinkedInScraper
 from src.scrapers.indeed import IndeedScraper
 from src.scrapers.naukri import NaukriScraper
+from src.scrapers.hn_algo import HNAlgoliaScraper
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ templates = Jinja2Templates(directory="templates")
 SCRAPERS = {
     "remoteok": RemoteOKScraper(),
     "linkedin": LinkedInScraper(),
+    "hackernews": HNAlgoliaScraper(),
     "indeed": IndeedScraper(),
     "naukri": NaukriScraper(),
 }
@@ -29,7 +31,7 @@ SCRAPERS = {
 # In-memory cache: {source_name: {"jobs": [...], "timestamp": float}}
 CACHE: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL = 300  # 5 minutes for success
-EMPTY_CACHE_TTL = 120  # 2 minutes for empty/failed attempts
+EMPTY_CACHE_TTL = 60  # 1 minute for empty/failed attempts
 
 
 class ScrapeResponse(BaseModel):
@@ -38,11 +40,11 @@ class ScrapeResponse(BaseModel):
     jobs: List[dict]
 
 
-async def fetch_single_scraper(name: str, scraper, timeout_seconds: float = 4.0) -> List[dict]:
+async def fetch_single_scraper(name: str, scraper, timeout_seconds: float = 6.0, force: bool = False) -> List[dict]:
     """Fetch jobs from a scraper with cache and strict per-scraper timeout."""
     now = time.time()
     cached = CACHE.get(name)
-    if cached:
+    if not force and cached:
         ttl = CACHE_TTL if cached["jobs"] else EMPTY_CACHE_TTL
         if (now - cached["timestamp"]) < ttl:
             return cached["jobs"]
@@ -54,7 +56,6 @@ async def fetch_single_scraper(name: str, scraper, timeout_seconds: float = 4.0)
         return dumped
     except Exception as exc:
         logger.warning("Scraper %s error or timeout: %s", name, exc)
-        # Cache empty response for EMPTY_CACHE_TTL to prevent repeatedly stalling clients
         if cached and cached.get("jobs"):
             return cached["jobs"]
         CACHE[name] = {"jobs": [], "timestamp": now}
@@ -78,9 +79,9 @@ async def home(request: Request):
 
 
 @app.get("/api/scrape", response_model=ScrapeResponse)
-async def scrape(source: str = Query(default="all")):
+async def scrape(source: str = Query(default="all"), force: bool = Query(default=False)):
     if source == "all":
-        tasks = [fetch_single_scraper(name, scraper, timeout_seconds=5.0) for name, scraper in SCRAPERS.items()]
+        tasks = [fetch_single_scraper(name, scraper, timeout_seconds=5.0, force=force) for name, scraper in SCRAPERS.items()]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         all_jobs = []
         for res in results:
@@ -100,7 +101,7 @@ async def scrape(source: str = Query(default="all")):
             content={"error": f"Unknown source '{source}'. Available: {sorted(SCRAPERS)} + ['all']"},
         )
 
-    jobs = await fetch_single_scraper(source, scraper, timeout_seconds=8.0)
+    jobs = await fetch_single_scraper(source, scraper, timeout_seconds=8.0, force=force)
     return ScrapeResponse(
         source=source,
         count=len(jobs),

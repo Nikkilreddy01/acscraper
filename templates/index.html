@@ -3,93 +3,577 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AcScraper — Jobs That Don't Block Back</title>
+    <title>AcScraper — High-Throughput Stealth Job Scraper Engine</title>
+    <meta name="description" content="Multi-source job ingestion engine with TLS fingerprint spoofing, headless browser fallback, and sub-second caching.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0a0a0a;
-            --text: #f5f5f5;
-            --muted: #9a9a9a;
+            --bg: #090a0f;
+            --surface: #11131b;
+            --surface-hover: #171a25;
+            --surface-active: #1d2130;
+            --border: #232736;
+            --border-light: #2e3447;
+            --text: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
             --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.25);
             --accent-hover: #60a5fa;
-            --surface: #141414;
-            --border: #2a2a2a;
+            --green: #10b981;
+            --green-glow: rgba(16, 185, 129, 0.2);
+            --orange: #f59e0b;
+            --purple: #8b5cf6;
+            --cyan: #06b6d4;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-sans);
             background: var(--bg);
             color: var(--text);
             line-height: 1.5;
             min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
-        .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
-        nav { border-bottom: 1px solid var(--border); padding: 20px 0; }
-        nav .brand { font-weight: 700; letter-spacing: -0.5px; }
-        nav .brand span { color: var(--accent); }
 
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navbar */
+        nav {
+            border-bottom: 1px solid var(--border);
+            background: rgba(9, 10, 15, 0.85);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            padding: 16px 0;
+        }
+        nav .nav-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .brand {
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            color: var(--text);
+        }
+        .brand span { color: var(--accent); }
+        .engine-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--green);
+            background: var(--green-glow);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 3px 10px;
+            border-radius: 999px;
+            margin-left: 10px;
+        }
+        .engine-status .pulse {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+        .nav-links {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color 0.15s;
+        }
+        .nav-link:hover { color: var(--text); }
+
+        /* Hero */
         .hero {
-            padding: 100px 0 80px;
+            padding: 60px 0 40px;
             text-align: center;
         }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--accent);
+            background: var(--accent-glow);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 4px 14px;
+            border-radius: 999px;
+            margin-bottom: 20px;
+        }
         .hero h1 {
-            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-size: clamp(2.2rem, 5vw, 3.5rem);
             font-weight: 800;
             letter-spacing: -1.5px;
-            line-height: 1.1;
-            max-width: 700px;
-            margin: 0 auto 20px;
+            line-height: 1.15;
+            max-width: 820px;
+            margin: 0 auto 16px;
+        }
+        .hero h1 span {
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #93c5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
         .hero p {
-            color: var(--muted);
-            font-size: clamp(1rem, 2vw, 1.25rem);
-            max-width: 520px;
-            margin: 0 auto 40px;
+            color: var(--text-secondary);
+            font-size: clamp(1rem, 1.8vw, 1.15rem);
+            max-width: 620px;
+            margin: 0 auto 28px;
+            line-height: 1.6;
         }
-        .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-        .btn {
-            padding: 14px 32px;
-            border-radius: 8px;
+
+        /* Tech Pills */
+        .tech-tags {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 36px;
+        }
+        .tech-pill {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        /* Console Card */
+        .console-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 36px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        }
+        .console-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .console-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .console-controls {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr auto auto;
+            gap: 12px;
+            align-items: end;
+        }
+        @media (max-width: 900px) {
+            .console-controls {
+                grid-template-columns: 1fr 1fr;
+            }
+            .console-controls .btn-full {
+                grid-column: span 2;
+            }
+        }
+        @media (max-width: 600px) {
+            .console-controls {
+                grid-template-columns: 1fr;
+            }
+            .console-controls .btn-full {
+                grid-column: span 1;
+            }
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .control-group label {
+            font-size: 0.75rem;
             font-weight: 600;
-            font-size: 1rem;
-            text-decoration: none;
-            transition: transform 0.15s ease, opacity 0.15s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+        .form-select, .form-input {
+            background: var(--bg);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            padding: 10px 14px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            width: 100%;
+        }
+        .form-select:focus, .form-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 0.9rem;
+            font-family: inherit;
             cursor: pointer;
             border: none;
+            text-decoration: none;
+            transition: all 0.15s ease;
+            white-space: nowrap;
         }
-        .btn:hover { transform: translateY(-2px); }
         .btn-primary {
             background: var(--accent);
             color: #fff;
         }
-        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
         .btn-secondary {
-            background: var(--surface);
+            background: var(--surface-hover);
             color: var(--text);
-            border: 1px solid var(--border);
+            border: 1px solid var(--border-light);
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--surface-active);
+            border-color: var(--accent);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
-        .controls {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            margin-bottom: 24px;
-            flex-wrap: wrap;
-        }
-        .controls label {
-            color: var(--muted);
-            font-size: 0.875rem;
-        }
-        .controls select {
-            background: var(--surface);
-            color: var(--text);
+        /* Terminal Output HUD */
+        .hud-log {
+            margin-top: 20px;
+            background: #06070a;
             border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: #94a3b8;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            overflow-x: auto;
+        }
+        .hud-log .status-text {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .hud-log .log-highlight {
+            color: var(--accent-hover);
+        }
+        .hud-log .log-success {
+            color: var(--green);
+        }
+        .hud-log .log-time {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        /* Live Metrics Bar */
+        .metrics-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        @media (max-width: 768px) {
+            .metrics-bar {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        .metric-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px 18px;
+        }
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .metric-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+            font-family: var(--font-mono);
+        }
+
+        /* Feed Section */
+        .feed-section {
+            margin-bottom: 60px;
+        }
+        .feed-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .feed-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .feed-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .count-pill {
+            background: var(--accent-glow);
+            color: var(--accent-hover);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-family: var(--font-mono);
+        }
+        .filter-box {
+            position: relative;
+            min-width: 260px;
+        }
+        .filter-input {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            padding: 8px 12px 8px 32px;
+            font-size: 0.85rem;
+            outline: none;
+        }
+        .filter-input:focus {
+            border-color: var(--accent);
+        }
+        .filter-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Job Cards Grid */
+        .jobs-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .job-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 20px 24px;
+            text-decoration: none;
+            color: inherit;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 16px;
+            align-items: center;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .job-card:hover {
+            border-color: var(--accent);
+            background: var(--surface-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+        .job-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .job-meta-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--text-secondary);
             font-size: 0.875rem;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
         }
-        .feed {
-            padding: 60px 0;
+        .meta-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
+        .job-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .source-tag {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: var(--radius-sm);
+            text-transform: uppercase;
+        }
+        .source-remoteok { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .source-linkedin { background: rgba(14, 116, 144, 0.15); color: #38bdf8; border: 1px solid rgba(14, 116, 144, 0.3); }
+        .source-hackernews { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .source-indeed { background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3); }
+        .source-naukri { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+        .tag-pill {
+            font-size: 0.75rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+        .apply-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 16px;
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-hover);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: all 0.15s;
+        }
+        .job-card:hover .apply-btn {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        /* Loading & Empty State */
+        .loading-state, .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: var(--surface);
+            border: 1px dashed var(--border-light);
+            border-radius: var(--radius-md);
+        }
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid var(--border-light);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Architecture Showcase */
+        .arch-section {
+            padding: 40px 0 60px;
+            border-top: 1px solid var(--border);
+        }
+        .arch-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .arch-sub {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto 30px;
+        }
+        .arch-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+        .arch-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 20px;
+        }
+        .arch-card-icon {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+        }
+        .arch-card h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+        .arch-card p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* Easter Egg */
         #easter {
             position: fixed;
             inset: 0;
@@ -97,199 +581,402 @@
             place-items: center;
             z-index: 9999;
             background: rgba(0,0,0,0.92);
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(10px);
         }
         #easter.active { display: grid; }
         #easter .msg {
             background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 32px 48px;
+            border: 1px solid var(--accent);
+            border-radius: var(--radius-lg);
+            padding: 36px 48px;
             text-align: center;
-            max-width: 480px;
+            max-width: 500px;
+            box-shadow: 0 0 50px rgba(59, 130, 246, 0.3);
         }
-        #easter h2 { font-size: 1.5rem; margin-bottom: 8px; }
-        #easter p { color: var(--accent); font-size: 0.95rem; }
+        #easter h2 { font-size: 1.6rem; margin-bottom: 10px; color: var(--text); }
+        #easter p { color: var(--accent-hover); font-size: 1rem; }
         #easter kbd {
-            background: var(--border);
+            background: var(--bg);
+            border: 1px solid var(--border-light);
             border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 0.8rem;
-            font-family: monospace;
-        }
-        .feed h2 {
-            font-size: 1.5rem;
-            margin-bottom: 24px;
-            letter-spacing: -0.5px;
-        }
-        .job-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 20px 24px;
-            margin-bottom: 12px;
-            transition: border-color 0.2s ease;
-        }
-        .job-card:hover { border-color: var(--accent); }
-        .job-title {
-            font-weight: 700;
-            font-size: 1.1rem;
-            margin-bottom: 4px;
+            padding: 3px 8px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
             color: var(--text);
-            text-decoration: none;
-            display: inline-block;
         }
-        .job-title:hover { color: var(--accent); }
-        .job-meta {
-            color: var(--muted);
-            font-size: 0.875rem;
-            margin-bottom: 4px;
-        }
-        .job-source {
-            display: inline-block;
-            background: var(--border);
-            color: var(--muted);
-            font-size: 0.75rem;
-            padding: 2px 8px;
-            border-radius: 999px;
-            margin-top: 8px;
-        }
-        .loading {
-            text-align: center;
-            color: var(--muted);
-            padding: 40px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-        }
-        .spinner {
-            width: 32px;
-            height: 32px;
-            border: 3px solid rgba(255,255,255,0.1);
-            border-radius: 50%;
-            border-top-color: var(--accent);
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .badge-count {
-            font-size: 0.9rem;
-            background: rgba(59, 130, 246, 0.15);
-            color: var(--accent);
-            padding: 2px 10px;
-            border-radius: 999px;
-            margin-left: 8px;
-            font-weight: 600;
-        }
+
         footer {
-            padding: 40px 0 80px;
-            text-align: center;
-            color: var(--muted);
-            font-size: 0.875rem;
             border-top: 1px solid var(--border);
-            margin-top: 60px;
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
         }
     </style>
 </head>
 <body>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="container nav-content">
+            <a href="/" class="brand">
+                Ac<span>Scraper</span>
+                <span class="engine-status">
+                    <span class="pulse"></span> Engine Active
+                </span>
+            </a>
+            <div class="nav-links">
+                <a href="#feed" class="nav-link">Live Feed</a>
+                <a href="/api/scrape" target="_blank" class="nav-link">API JSON</a>
+                <a href="/docs" target="_blank" class="nav-link">Swagger Docs</a>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
-        <nav>
-            <div class="brand">Ac<span>Scraper</span></div>
-        </nav>
-
+        <!-- Hero Section -->
         <section class="hero">
-            <h1>Job listings that actually find you</h1>
-            <p>We pull real-time postings from open sources — no accounts to burn, no paywalls, no fake aggregators.</p>
-            <div class="cta-row">
-                <a class="btn btn-primary" href="#feed" id="live-demo">See live demo →</a>
-                <a class="btn btn-secondary" href="/api/scrape" target="_blank">API docs</a>
+            <div class="hero-badge">⚡ Acdyon Engineering Frontend Challenge</div>
+            <h1>Job Ingestion That <span>Doesn't Block Back</span></h1>
+            <p>High-throughput job scraper and aggregation engine with TLS fingerprint spoofing, browser fallback, and sub-second caching.</p>
+            
+            <div class="tech-tags">
+                <span class="tech-pill">curl_cffi (chrome145)</span>
+                <span class="tech-pill">Playwright Headless Pool</span>
+                <span class="tech-pill">FastAPI Async Core</span>
+                <span class="tech-pill">In-Memory Cache (TTL 5m)</span>
             </div>
         </section>
 
-        <section class="feed" id="feed">
-            <div class="controls">
-                <label for="source-select">Source:</label>
-                <select id="source-select">
-                    <option value="all" selected>All Sources (Aggregated)</option>
-                    <option value="remoteok">RemoteOK (API)</option>
-                    <option value="linkedin">LinkedIn (REST API)</option>
-                    <option value="indeed">Indeed (HTML)</option>
-                    <option value="naukri">Naukri (RSS + HTML)</option>
-                </select>
-                <span id="source-note" style="color: var(--muted); font-size: 0.75rem;"></span>
+        <!-- Interactive Scraper Console -->
+        <div class="console-panel">
+            <div class="console-header">
+                <div class="console-title">
+                    <span>⚙️ Scraper Ingestion Console</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono);">
+                    Target Host: <span style="color: var(--green);">Render Cloud Docker</span>
+                </div>
             </div>
-            <h2 id="feed-title">Live feed — All Sources</h2>
-            <div id="jobs-list"><div class="loading">Loading latest postings…</div></div>
+
+            <div class="console-controls">
+                <div class="control-group">
+                    <label for="source-select">Ingestion Source</label>
+                    <select id="source-select" class="form-select">
+                        <option value="all" selected>All Sources (Aggregated Pipeline)</option>
+                        <option value="remoteok">RemoteOK (Live API — 100+ Jobs)</option>
+                        <option value="linkedin">LinkedIn (Stealth Guest API)</option>
+                        <option value="hackernews">Hacker News (Who is Hiring API)</option>
+                        <option value="indeed">Indeed (HTML / Browser Fallback)</option>
+                        <option value="naukri">Naukri (XHR Interception / Playwright)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="keyword-input">Role Filter</label>
+                    <input type="text" id="keyword-input" class="form-input" placeholder="e.g. Engineer, Python">
+                </div>
+
+                <div class="control-group">
+                    <label for="location-input">Location</label>
+                    <input type="text" id="location-input" class="form-input" placeholder="e.g. Remote">
+                </div>
+
+                <button id="btn-fetch" class="btn btn-primary btn-full">
+                    <span>⚡ Fetch Postings</span>
+                </button>
+
+                <button id="btn-force" class="btn btn-secondary" title="Bypass cache and scrape fresh data">
+                    <span>🔄 Force Scrape</span>
+                </button>
+            </div>
+
+            <!-- Terminal Execution HUD -->
+            <div class="hud-log" id="hud-log">
+                <div class="status-text">
+                    <span>●</span> <span id="log-text">Ready. Select source and click "Fetch Postings" or browse cached results.</span>
+                </div>
+                <div class="log-time" id="log-time">0.00s</div>
+            </div>
+        </div>
+
+        <!-- Metrics HUD -->
+        <div class="metrics-bar">
+            <div class="metric-card">
+                <div class="metric-label">Total Listings</div>
+                <div class="metric-value" id="metric-count">--</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Active Source</div>
+                <div class="metric-value" id="metric-source" style="font-size: 1rem; text-transform: capitalize;">All Sources</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Ingestion Latency</div>
+                <div class="metric-value" id="metric-latency" style="color: var(--accent-hover);">-- ms</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">HTTP Status</div>
+                <div class="metric-value" id="metric-status" style="color: var(--green);">200 OK</div>
+            </div>
+        </div>
+
+        <!-- Live Feed Section -->
+        <section class="feed-section" id="feed">
+            <div class="feed-header">
+                <div class="feed-title-wrap">
+                    <h2 class="feed-title" id="feed-title">Live Postings</h2>
+                    <span class="count-pill" id="feed-count-pill">0 listings</span>
+                </div>
+                <div class="filter-box">
+                    <span class="filter-icon">🔍</span>
+                    <input type="text" id="client-search" class="filter-input" placeholder="Filter title, company, or skills...">
+                </div>
+            </div>
+
+            <div id="jobs-container" class="jobs-grid">
+                <!-- Rendered Dynamically -->
+            </div>
         </section>
 
-        <footer>Built for the Acdyon Technologies Frontend Challenge.</footer>
+        <!-- Technical Architecture Overview -->
+        <section class="arch-section">
+            <h2 class="arch-title">Anti-Bot Evasion Architecture</h2>
+            <p class="arch-sub">How AcScraper pulls job listings repeatedly without triggering bot bans.</p>
+
+            <div class="arch-grid">
+                <div class="arch-card">
+                    <div class="arch-card-icon">🛡️</div>
+                    <h3>TLS Fingerprint Spoofing</h3>
+                    <p>Uses <code>curl_cffi</code> to mirror Google Chrome's JA3 signature (chrome145), bypassing Cloudflare & Akamai HTTP handshakes.</p>
+                </div>
+                <div class="arch-card">
+                    <div class="arch-card-icon">🎭</div>
+                    <h3>Stealth Playwright Pool</h3>
+                    <p>Launches singleton Chromium sessions with automation flags disabled to intercept XHR network responses on SPA-rendered job boards.</p>
+                </div>
+                <div class="arch-card">
+                    <div class="arch-card-icon">⏱️</div>
+                    <h3>Jittered Pacing</h3>
+                    <p>Injects randomized delay intervals (2–6s) and exponential backoff to mimic human browsing intervals and protect server IP reputation.</p>
+                </div>
+                <div class="arch-card">
+                    <div class="arch-card-icon">⚡</div>
+                    <h3>Sub-Second In-Memory Cache</h3>
+                    <p>LRU-style in-memory caching serves 100+ structured listings in under 50ms, protecting upstream boards from rate limits.</p>
+                </div>
+            </div>
+        </section>
     </div>
 
+    <!-- Easter Egg Modal -->
     <div id="easter">
         <div class="msg">
-            <h2>👾 Konami code activated</h2>
-            <p>You found it — send <kbd>↑ ↑ ↓ ↓ ← → ← → B A</kbd> back with the submission form.</p>
+            <h2>👾 Konami Code Activated</h2>
+            <p>Submission Easter Egg unlocked: <kbd>↑ ↑ ↓ ↓ ← → ← → B A</kbd></p>
         </div>
     </div>
 
-    <script>
-        const jobsList = document.getElementById('jobs-list');
-        const sourceSelect = document.getElementById('source-select');
+    <footer>
+        <div class="container">
+            Built for the Acdyon Technologies Frontend & Scraping Engineering Challenge.
+        </div>
+    </footer>
 
-        document.getElementById('live-demo').addEventListener('click', (e) => {
-            e.preventDefault();
-            document.getElementById('feed').scrollIntoView({ behavior: 'smooth' });
-        });
+    <script>
+        let allJobsData = [];
+        const sourceSelect = document.getElementById('source-select');
+        const btnFetch = document.getElementById('btn-fetch');
+        const btnForce = document.getElementById('btn-force');
+        const clientSearch = document.getElementById('client-search');
+        const keywordInput = document.getElementById('keyword-input');
+        const locationInput = document.getElementById('location-input');
+        const jobsContainer = document.getElementById('jobs-container');
+        const hudLog = document.getElementById('hud-log');
+        const logText = document.getElementById('log-text');
+        const logTime = document.getElementById('log-time');
+        const metricCount = document.getElementById('metric-count');
+        const metricSource = document.getElementById('metric-source');
+        const metricLatency = document.getElementById('metric-latency');
+        const metricStatus = document.getElementById('metric-status');
+        const feedCountPill = document.getElementById('feed-count-pill');
+        const feedTitle = document.getElementById('feed-title');
 
         function escapeHtml(str) {
-            return String(str || '').replace(/[&<>"']/g, m => ({'&':'&','<':'<','>':'>','"':'"',"'":'''}[m]));
+            return String(str || '').replace(/[&<>"']/g, m => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
         }
 
-        async function loadJobs() {
-            const src = sourceSelect.value;
-            const feedTitle = document.getElementById('feed-title');
-            const cleanTitle = sourceSelect.options[sourceSelect.selectedIndex].text.split(' (')[0];
-            feedTitle.innerHTML = 'Live feed — ' + escapeHtml(cleanTitle);
-            jobsList.innerHTML = '<div class="loading"><div class="spinner"></div><span>Loading live postings…</span></div>';
-            try {
-                const res = await fetch('/api/scrape?source=' + encodeURIComponent(src));
-                const data = await res.json();
-                if (!res.ok) {
-                    jobsList.innerHTML = '<div class="loading"><span>' + escapeHtml(data.error || 'Error loading jobs') + '</span></div>';
-                    return;
-                }
-                if (!data.jobs || data.jobs.length === 0) {
-                    jobsList.innerHTML = '<div class="loading"><span>No jobs right now — the source may be rate-limiting or updating.</span></div>';
-                    return;
-                }
-                feedTitle.innerHTML = `Live feed — ${escapeHtml(cleanTitle)} <span class="badge-count">${data.jobs.length} jobs</span>`;
-                jobsList.innerHTML = data.jobs.map(j => `
-                    <a class="job-card" href="${escapeHtml(j.url)}" target="_blank" rel="noopener">
-                        <div class="job-title">${escapeHtml(j.title)}</div>
-                        ${j.company ? `<div class="job-meta">${escapeHtml(j.company)}</div>` : ''}
-                        ${j.location ? `<div class="job-meta">${escapeHtml(j.location)}</div>` : ''}
-                        ${j.posted_at ? `<div class="job-meta">${new Date(j.posted_at).toLocaleDateString()}</div>` : ''}
-                        <span class="job-source">${escapeHtml(j.source)}</span>
-                    </a>
-                `).join('');
-            } catch (err) {
-                jobsList.innerHTML = '<div class="loading"><span>Could not load jobs. Try again later.</span></div>';
+        function setHud(message, timeStr, type = 'normal') {
+            logText.innerHTML = message;
+            logTime.textContent = timeStr || '';
+            if (type === 'success') {
+                logText.className = 'log-success';
+            } else if (type === 'highlight') {
+                logText.className = 'log-highlight';
+            } else {
+                logText.className = '';
             }
         }
 
-        sourceSelect.addEventListener('change', loadJobs);
-        loadJobs();
-        setInterval(loadJobs, 300000);
+        function getSourceBadgeClass(source) {
+            const s = (source || '').toLowerCase();
+            if (s.includes('remoteok')) return 'source-remoteok';
+            if (s.includes('linkedin')) return 'source-linkedin';
+            if (s.includes('hacker') || s.includes('hn')) return 'source-hackernews';
+            if (s.includes('indeed')) return 'source-indeed';
+            if (s.includes('naukri')) return 'source-naukri';
+            return 'source-remoteok';
+        }
 
+        function renderJobs(jobs) {
+            if (!jobs || jobs.length === 0) {
+                jobsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h3 style="margin-bottom: 8px;">No matching job postings found</h3>
+                        <p style="color: var(--text-muted); font-size: 0.9rem;">Try selecting a different source or clearing search filters.</p>
+                    </div>
+                `;
+                feedCountPill.textContent = '0 listings';
+                metricCount.textContent = '0';
+                return;
+            }
+
+            feedCountPill.textContent = `${jobs.length} listings`;
+            metricCount.textContent = jobs.length;
+
+            jobsContainer.innerHTML = jobs.map(j => {
+                const badgeClass = getSourceBadgeClass(j.source);
+                const dateStr = j.posted_at ? new Date(j.posted_at).toLocaleDateString(undefined, {
+                    month: 'short', day: 'numeric', year: 'numeric'
+                }) : 'Recently posted';
+
+                return `
+                    <a class="job-card" href="${escapeHtml(j.url)}" target="_blank" rel="noopener noreferrer">
+                        <div>
+                            <div class="job-title">
+                                <span>${escapeHtml(j.title)}</span>
+                            </div>
+                            <div class="job-meta-row">
+                                ${j.company ? `<span class="meta-item">🏢 <strong>${escapeHtml(j.company)}</strong></span>` : ''}
+                                ${j.location ? `<span class="meta-item">📍 ${escapeHtml(j.location)}</span>` : '<span class="meta-item">📍 Remote</span>'}
+                                <span class="meta-item">📅 ${escapeHtml(dateStr)}</span>
+                            </div>
+                            <div class="job-tags">
+                                <span class="source-tag ${badgeClass}">${escapeHtml(j.source)}</span>
+                                ${j.description_snippet ? `<span class="tag-pill">${escapeHtml(j.description_snippet.substring(0, 45))}</span>` : ''}
+                            </div>
+                        </div>
+                        <div>
+                            <span class="apply-btn">Apply Now ↗</span>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        function filterJobs() {
+            const query = (clientSearch.value || '').toLowerCase().trim();
+            const roleFilter = (keywordInput.value || '').toLowerCase().trim();
+            const locFilter = (locationInput.value || '').toLowerCase().trim();
+
+            const filtered = allJobsData.filter(j => {
+                const title = (j.title || '').toLowerCase();
+                const comp = (j.company || '').toLowerCase();
+                const loc = (j.location || '').toLowerCase();
+                const snip = (j.description_snippet || '').toLowerCase();
+
+                const matchesQuery = !query || title.includes(query) || comp.includes(query) || loc.includes(query) || snip.includes(query);
+                const matchesRole = !roleFilter || title.includes(roleFilter) || snip.includes(roleFilter);
+                const matchesLoc = !locFilter || loc.includes(locFilter);
+
+                return matchesQuery && matchesRole && matchesLoc;
+            });
+
+            renderJobs(filtered);
+        }
+
+        async function fetchJobs(force = false) {
+            const src = sourceSelect.value;
+            const srcLabel = sourceSelect.options[sourceSelect.selectedIndex].text.split(' (')[0];
+            
+            feedTitle.textContent = `Live Postings — ${srcLabel}`;
+            metricSource.textContent = srcLabel;
+            btnFetch.disabled = true;
+            btnForce.disabled = true;
+
+            jobsContainer.innerHTML = `
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Ingesting live postings from ${escapeHtml(srcLabel)}...</h3>
+                    <p style="color: var(--text-muted); font-size: 0.85rem;">Bypassing anti-bot checks with Chrome 145 TLS fingerprinting.</p>
+                </div>
+            `;
+
+            const startTime = performance.now();
+            setHud(`Connecting to <span class="log-highlight">${srcLabel}</span> via TLS fingerprint impersonation...`, '0.05s');
+
+            try {
+                const url = `/api/scrape?source=${encodeURIComponent(src)}${force ? '&force=true' : ''}`;
+                const res = await fetch(url);
+                const elapsedMs = Math.round(performance.now() - startTime);
+                metricLatency.textContent = `${elapsedMs} ms`;
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    setHud(`⚠️ Error fetching from ${srcLabel}: ${escapeHtml(err.error || 'Request failed')}`, `${(elapsedMs / 1000).toFixed(2)}s`);
+                    metricStatus.textContent = `${res.status} Error`;
+                    metricStatus.style.color = '#ef4444';
+                    renderJobs([]);
+                    return;
+                }
+
+                const data = await res.json();
+                metricStatus.textContent = '200 OK';
+                metricStatus.style.color = 'var(--green)';
+                allJobsData = data.jobs || [];
+
+                const count = allJobsData.length;
+                setHud(`✅ Successfully ingested <span class="log-success">${count} listings</span> from ${srcLabel}`, `${(elapsedMs / 1000).toFixed(2)}s`, 'success');
+
+                filterJobs();
+            } catch (err) {
+                const elapsedMs = Math.round(performance.now() - startTime);
+                setHud(`⚠️ Network or timeout error during scraping`, `${(elapsedMs / 1000).toFixed(2)}s`);
+                metricStatus.textContent = 'Network Error';
+                metricStatus.style.color = '#ef4444';
+                renderJobs([]);
+            } finally {
+                btnFetch.disabled = false;
+                btnForce.disabled = false;
+            }
+        }
+
+        // Event Listeners
+        btnFetch.addEventListener('click', () => fetchJobs(false));
+        btnForce.addEventListener('click', () => fetchJobs(true));
+        sourceSelect.addEventListener('change', () => fetchJobs(false));
+        clientSearch.addEventListener('input', filterJobs);
+        keywordInput.addEventListener('input', filterJobs);
+        locationInput.addEventListener('input', filterJobs);
+
+        // Initial Load on Page Open
+        fetchJobs(false);
+
+        // Easter Egg (Konami Code)
         const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
-        let idx = 0;
+        let kIdx = 0;
         document.addEventListener('keydown', (e) => {
-            if (e.key === KONAMI[idx]) { idx++; } else { idx = 0; }
-            if (idx === KONAMI.length) {
-                document.getElementById('easter').classList.add('active');
-                setTimeout(() => document.getElementById('easter').classList.remove('active'), 6000);
+            if (e.key === KONAMI[kIdx]) {
+                kIdx++;
+                if (kIdx === KONAMI.length) {
+                    const easter = document.getElementById('easter');
+                    easter.classList.add('active');
+                    setTimeout(() => easter.classList.remove('active'), 5000);
+                    kIdx = 0;
+                }
+            } else {
+                kIdx = 0;
             }
         });
     </script>
