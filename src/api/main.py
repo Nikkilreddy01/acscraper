@@ -28,7 +28,8 @@ SCRAPERS = {
 
 # In-memory cache: {source_name: {"jobs": [...], "timestamp": float}}
 CACHE: Dict[str, Dict[str, Any]] = {}
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 300  # 5 minutes for success
+EMPTY_CACHE_TTL = 120  # 2 minutes for empty/failed attempts
 
 
 class ScrapeResponse(BaseModel):
@@ -37,27 +38,26 @@ class ScrapeResponse(BaseModel):
     jobs: List[dict]
 
 
-async def fetch_single_scraper(name: str, scraper, timeout_seconds: float = 6.0) -> List[dict]:
+async def fetch_single_scraper(name: str, scraper, timeout_seconds: float = 4.0) -> List[dict]:
     """Fetch jobs from a scraper with cache and strict per-scraper timeout."""
     now = time.time()
     cached = CACHE.get(name)
-    if cached and (now - cached["timestamp"] < CACHE_TTL) and cached["jobs"]:
-        return cached["jobs"]
+    if cached:
+        ttl = CACHE_TTL if cached["jobs"] else EMPTY_CACHE_TTL
+        if (now - cached["timestamp"]) < ttl:
+            return cached["jobs"]
 
     try:
         raw_jobs = await asyncio.wait_for(scraper.fetch(None), timeout=timeout_seconds)
         dumped = [j.model_dump() for j in raw_jobs] if raw_jobs else []
-        if dumped:
-            CACHE[name] = {"jobs": dumped, "timestamp": now}
-            return dumped
-        elif cached and cached["jobs"]:
-            # Fall back to existing cached items if available
-            return cached["jobs"]
-        return []
+        CACHE[name] = {"jobs": dumped, "timestamp": now}
+        return dumped
     except Exception as exc:
         logger.warning("Scraper %s error or timeout: %s", name, exc)
-        if cached and cached["jobs"]:
+        # Cache empty response for EMPTY_CACHE_TTL to prevent repeatedly stalling clients
+        if cached and cached.get("jobs"):
             return cached["jobs"]
+        CACHE[name] = {"jobs": [], "timestamp": now}
         return []
 
 
