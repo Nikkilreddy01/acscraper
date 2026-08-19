@@ -734,7 +734,16 @@
             </div>
 
             <div id="jobs-container" class="jobs-grid">
-                <!-- Rendered Dynamically -->
+                <div class="empty-state" style="padding: 70px 20px;">
+                    <div style="font-size: 2.4rem; margin-bottom: 12px;">⚡</div>
+                    <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">Scraper Engine Ready</h3>
+                    <p style="color: var(--text-secondary); max-width: 520px; margin: 0 auto 24px; font-size: 0.95rem;">
+                        Select an ingestion source from the console above (e.g. <strong>Indeed</strong>, <strong>RemoteOK</strong>, <strong>LinkedIn</strong>, <strong>Naukri</strong>, or <strong>All Sources</strong>) and click <strong>"Fetch Postings"</strong> to trigger the ingestion pipeline.
+                    </p>
+                    <button id="btn-hero-fetch" class="btn btn-primary" style="margin: 0 auto;" onclick="fetchJobs(false)">
+                        <span>⚡ Fetch Postings Now</span>
+                    </button>
+                </div>
             </div>
         </section>
 
@@ -955,13 +964,17 @@
         // Event Listeners
         btnFetch.addEventListener('click', () => fetchJobs(false));
         btnForce.addEventListener('click', () => fetchJobs(true));
-        sourceSelect.addEventListener('change', () => fetchJobs(false));
+        
+        sourceSelect.addEventListener('change', () => {
+            const srcLabel = sourceSelect.options[sourceSelect.selectedIndex].text.split(' (')[0];
+            feedTitle.textContent = `Live Postings — ${srcLabel}`;
+            metricSource.textContent = srcLabel;
+            setHud(`Source set to <span class="log-highlight">${srcLabel}</span>. Click "Fetch Postings" to start ingestion.`, 'Ready');
+        });
+
         clientSearch.addEventListener('input', filterJobs);
         keywordInput.addEventListener('input', filterJobs);
         locationInput.addEventListener('input', filterJobs);
-
-        // Initial Load on Page Open
-        fetchJobs(false);
 
         // Easter Egg (Konami Code)
         const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];

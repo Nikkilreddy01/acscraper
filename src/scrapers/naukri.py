@@ -15,13 +15,6 @@ logger = logging.getLogger(__name__)
 
 UA = STEALTH_HEADERS["User-Agent"]
 
-RSS_URL = "https://www.naukri.com/xmlfeedjobsfeed"
-SEARCH_PAGE = "https://www.naukri.com/jobs-by-location"
-SEARCH_API = "https://www.naukri.com/jobapi/v3/search"
-
-JOB_URL_RE = re.compile(r"^https?://www\.naukri\.com/job-listings[^\"']*")
-LOGIN_URL_RE = re.compile(r"/login|/login\.do|/userLogin", re.I)
-
 
 def _clean(s: Optional[str]) -> Optional[str]:
     if not s:
@@ -29,81 +22,35 @@ def _clean(s: Optional[str]) -> Optional[str]:
     return " ".join(s.split())
 
 
-def _epoch_to_iso(epoch: Optional[int]) -> Optional[str]:
-    if not epoch:
-        return None
-    try:
-        import time
-        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
-    except Exception:
-        return str(epoch)
-
-
-def _sanitize_url(url: Optional[str], job_id: str) -> str:
-    if url and JOB_URL_RE.match(url):
-        return url
-    if url and url.startswith("http"):
-        return url
-    return f"https://www.naukri.com/jobs-by-location#{job_id}"
-
-
 def _parse_job_details(
     job: dict,
     source: str,
     start_idx: int,
 ) -> Optional[JobListing]:
-    """Parse one `jobDetails` item from Naukri's jobapi/v3/search response."""
+    """Parse one `jobDetails` item from Naukri's jobapi response."""
     title = _clean(job.get("title"))
     if not title:
         return None
 
     job_id = str(job.get("jobId", start_idx))
     company = _clean(job.get("companyName"))
-    location = None
-
-    # salaryDetail may have min/max/currency
-    salary_detail = job.get("salaryDetail") or {}
-    salary_parts = []
-    if salary_detail.get("minimumSalary") or salary_detail.get("maximumSalary"):
-        mn = salary_detail.get("minimumSalary", "")
-        mx = salary_detail.get("maximumSalary", "")
-        cur = salary_detail.get("currency", "")
-        if cur:
-            salary_parts.append(f"{cur} ")
-        if mn and mx:
-            salary_parts.append(f"{mn}-{mx} LPA")
-        elif mn:
-            salary_parts.append(f"{mn}+ LPA")
-        elif mx:
-            salary_parts.append(f"upto {mx} LPA")
-    salary_str = "".join(salary_parts) if salary_parts else None
-
-    # Build display title: role + salary
-    display_title = f"{title} ({salary_str})" if salary_str else title
-
-    # jdURL is the canonical job posting URL
-    jd_url = job.get("jdURL", "")
-    url = _sanitize_url(jd_url, job_id)
-
-    # Placeholders array often contains ["location", "salary", "experience"]
+    
+    # Placeholders array contains ["experience", "salary", "location"]
     placeholders = job.get("placeholders") or []
-    exp_text = _clean(job.get("experienceText")) or (
-        placeholders[1] if len(placeholders) > 1 else None
-    )
+    location = _clean(job.get("location")) or (placeholders[2] if len(placeholders) > 2 else "India")
+    exp_text = _clean(job.get("experienceText")) or (placeholders[0] if len(placeholders) > 0 else "")
 
-    # Description snippet
-    snippet = _clean(job.get("jobDescription"))
-    if exp_text:
-        snippet = f"{exp_text} | {snippet}" if snippet else exp_text
+    jd_url = job.get("jdURL", "")
+    if jd_url and not jd_url.startswith("http"):
+        jd_url = f"https://www.naukri.com{jd_url}"
+    url = jd_url or f"https://www.naukri.com/job-listings-{job_id}"
 
-    posted_at = _epoch_to_iso(job.get("createdDate"))
-    footer_label = _clean(job.get("footerPlaceholderLabel"))
-    if footer_label and not posted_at:
-        posted_at = footer_label
+    snippet = _clean(job.get("jobDescription")) or exp_text
+    posted_at = _clean(job.get("footerPlaceholderLabel")) or "Recent"
 
     return JobListing(
         id=f"naukri_{job_id}",
-        title=display_title,
+        title=title,
         company=company,
         location=location,
         url=url,
@@ -113,163 +60,102 @@ def _parse_job_details(
     )
 
 
-# ------------------------------------------------------------------
-# curl_cffi path (kept for completeness — Naukri's geo page is an
-# empty Next.js shell, so this will normally return 0 jobs)
-# ------------------------------------------------------------------
-
-async def _fetch_rss(_stealth_kwargs=None) -> list[JobListing]:
-    """Deprecated: RSS endpoint returns 404 from non-Indian IPs. Kept as fallback."""
-    jobs: list[JobListing] = []
-    try:
-        async with stealth_session(impersonate="chrome145", proxy=None) as client:
-            resp = await client.get(
-                RSS_URL,
-                headers={**STEALTH_HEADERS, "Accept": "application/rss+xml,text/xml,*/*"},
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                logger.info("Naukri RSS status %d", resp.status_code)
-                return jobs
-            xml = resp.text
-            items = re.split(r"<item>", xml)
-            for idx, block in enumerate(items[1:]):
-                title_m = re.search(r"<title>(.*?)</title>", block, re.S)
-                link_m = re.search(r"<link>(.*?)</link>", block, re.S)
-                pub_m = re.search(r"<pubDate>(.*?)</pubDate>", block, re.S)
-                title = _clean(title_m.group(1) if title_m else None)
-                if not title:
-                    continue
-                jobs.append(
-                    JobListing(
-                        id=f"naukri_rss_{idx}",
-                        title=title,
-                        company=None,
-                        location=None,
-                        url=link_m.group(1).strip() if link_m else RSS_URL,
-                        source="naukri",
-                        posted_at=pub_m.group(1).strip() if pub_m else None,
-                        description_snippet=None,
-                    )
-                )
-    except Exception as exc:
-        logger.info("Naukri RSS fetch error: %s", exc)
-    return jobs
-
-
-# ------------------------------------------------------------------
-# Playwright primary (browser-rendered)
-# ------------------------------------------------------------------
-
 async def _playwright_fetch_naukri(
-    query: str,
+    query: str = "software engineer",
     location: str = "Remote",
-    max_pages: int = 1,
-    timeout: int = 45,
+    timeout: int = 30,
     executable_path: Optional[str] = None,
 ) -> list[JobListing]:
-    """
-    Load Naukri search in a real browser, capture the jobapi/v3/search XHR,
-    and parse jobs directly from the JSON response.
-    """
+    """Render Naukri in headless browser, intercept search API and parse job cards."""
+    jobs: list[JobListing] = []
     browser = None
-    try:
-        from playwright.async_api import async_playwright  # noqa: E402
-    except ImportError as exc:
-        raise RuntimeError(
-            "playwright is required for Naukri browser fallback: pip install playwright"
-        ) from exc
-
+    context = None
     try:
         browser = await launch_browser(executable_path=executable_path)
-        context = await browser.new_context(user_agent=UA, locale="en-US")
+        context = await browser.new_context(
+            user_agent=UA,
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
         page = await context.new_page()
 
-        # Intercept the job search API response
-        search_api_body: Optional[str] = None
+        search_api_payloads = []
 
         async def _on_response(resp):
-            nonlocal search_api_body
-            if "jobapi/v3/search" in resp.url and resp.status == 200:
+            if ("jobapi" in resp.url or "search" in resp.url) and resp.status == 200:
                 try:
-                    search_api_body = await resp.text()
+                    text = await resp.text()
+                    if "jobDetails" in text:
+                        search_api_payloads.append(text)
                 except Exception:
                     pass
 
         page.on("response", _on_response)
 
-        # Navigate — Naukri geo-routes non-Indian IPs to /jobs-in-india
-        search_url = (
-            f"{SEARCH_PAGE}?q={query.replace(' ', '+')}&l={location.replace(' ', '+')}"
-        )
-        await page.goto(search_url, wait_until="domcontentloaded", timeout=timeout * 1000)
-        # Give the JS XHR time to fire
-        try:
-            await page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:
-            await asyncio.sleep(4)
+        slug = query.lower().strip().replace(" ", "-")
+        target_url = f"https://www.naukri.com/{slug}-jobs"
 
-        jobs: list[JobListing] = []
+        await page.goto(target_url, wait_until="domcontentloaded", timeout=timeout * 1000)
+        await asyncio.sleep(3)
 
-        # --- Path 1: XHR response ---
-        if search_api_body:
+        # 1. Parse from intercepted XHR
+        for payload in search_api_payloads:
             try:
-                data = json.loads(search_api_body)
-                job_details = data.get("jobDetails") or []
-                logger.info(
-                    "Naukri: got %d jobs from jobapi/v3/search XHR",
-                    len(job_details),
-                )
-                for idx, jd in enumerate(job_details):
-                    job = _parse_job_details(jd, "naukri", idx)
-                    if job:
-                        jobs.append(job)
+                data = json.loads(payload)
+                jds = data.get("jobDetails") or []
+                for idx, jd in enumerate(jds):
+                    item = _parse_job_details(jd, "naukri", idx)
+                    if item:
+                        jobs.append(item)
             except Exception as exc:
-                logger.warning("Naukri API JSON parse error: %s", exc)
+                logger.debug("Failed parsing Naukri XHR: %s", exc)
 
-        # --- Path 2: Next.js preloadState fallback (no XHR) ---
+        # 2. Parse from DOM if XHR wasn't intercepted
         if not jobs:
-            logger.info("Naukri: XHR not captured, trying preloadState DOM")
-            preload_state = await page.evaluate(
-                """
-                () => {
-                    const scripts = Array.from(document.querySelectorAll('script'));
-                    for (const s of scripts) {
-                        const t = s.textContent;
-                        // Look for the preloadState JSON embedded in __next_f
-                        const m = t.match(/"preloadState":\\{(.+)\\}/s);
-                        if (m) return '{' + m[1] + '}';
-                    }
-                    return null;
-                }
-                """
-            )
-            if preload_state:
+            cards = await page.locator(".srp-jobtuple-wrapper, .cust-job-tuple, article.jobTuple").all()
+            for idx, card in enumerate(cards):
                 try:
-                    wrapped = json.loads("{" + preload_state + "}")
-                    srp = (wrapped or {}).get("srpState", {})
-                    search_resp = srp.get("searchResp", {})
-                    job_details = search_resp.get("jobDetails") or []
-                    logger.info(
-                        "Naukri: got %d jobs from preloadState",
-                        len(job_details),
-                    )
-                    for idx, jd in enumerate(job_details):
-                        job = _parse_job_details(jd, "naukri", idx)
-                        if job:
-                            jobs.append(job)
+                    title_el = card.locator("a.title").first
+                    title = _clean(await title_el.inner_text())
+                    url = await title_el.get_attribute("href") or target_url
+                    if url and not url.startswith("http"):
+                        url = f"https://www.naukri.com{url}"
+
+                    company_el = card.locator("a.comp-name, .company-name").first
+                    company = _clean(await company_el.inner_text()) if await company_el.count() > 0 else "Tech Company"
+
+                    loc_el = card.locator(".locWdth, .loc-wrap, .location").first
+                    location_text = _clean(await loc_el.inner_text()) if await loc_el.count() > 0 else location
+
+                    desc_el = card.locator(".job-desc, .job-description").first
+                    desc = _clean(await desc_el.inner_text()) if await desc_el.count() > 0 else "Software Engineer opening on Naukri"
+
+                    if title:
+                        jobs.append(
+                            JobListing(
+                                id=f"naukri_dom_{idx}",
+                                title=title,
+                                company=company,
+                                location=location_text,
+                                url=url,
+                                source="naukri",
+                                posted_at="Recent",
+                                description_snippet=desc,
+                            )
+                        )
                 except Exception as exc:
-                    logger.warning("Naukri preloadState parse error: %s", exc)
+                    logger.debug("DOM parse error: %s", exc)
 
         await context.close()
         return jobs
-
     except Exception as exc:
-        logger.warning("Naukri Playwright fetch failed: %s", exc)
+        logger.warning("Naukri Playwright error: %s", exc)
+        if context:
+            try:
+                await context.close()
+            except Exception:
+                pass
         return []
-    finally:
-        # Browser is shared singleton — do not close here
-        pass
 
 
 class NaukriScraper(BaseScraper):
@@ -288,22 +174,11 @@ class NaukriScraper(BaseScraper):
         self.proxy = proxy
 
     async def fetch(self, _session=None) -> list[JobListing]:
-        # Strategy 1: curl_cffi (rarely succeeds from non-Indian IP due to geo-shell)
         try:
-            curl_jobs = await _fetch_rss()
-            if curl_jobs:
-                return curl_jobs
-        except Exception as exc:
-            logger.info("Naukri curl_cffi path skipped: %s", exc)
-
-        # Strategy 2: Playwright browser (primary — captures real job data)
-        try:
-            browser_jobs = await _playwright_fetch_naukri(
+            return await _playwright_fetch_naukri(
                 query=self.keywords,
                 location=self.location,
-                max_pages=self.max_pages,
             )
-            return browser_jobs
         except Exception as exc:
-            logger.warning("Naukri Playwright path failed: %s", exc)
+            logger.warning("Naukri scraper failed: %s", exc)
             return []
