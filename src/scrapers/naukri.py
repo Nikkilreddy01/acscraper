@@ -166,7 +166,7 @@ async def _playwright_fetch_naukri(
     location: str = "Remote",
     max_pages: int = 1,
     timeout: int = 45,
-    executable_path: str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    executable_path: Optional[str] = None,
 ) -> list[JobListing]:
     """
     Load Naukri search in a real browser, capture the jobapi/v3/search XHR,
@@ -302,7 +302,6 @@ class NaukriScraper(BaseScraper):
                 query=self.keywords,
                 location=self.location,
                 max_pages=self.max_pages,
-                executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             )
             return browser_jobs
         except Exception as exc:

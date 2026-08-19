@@ -55,17 +55,32 @@ def stealth_session(
 # ---------------------------------------------------------------------------
 
 import asyncio
+import os
 
 _browser: Optional["PlaywrightBrowser"] = None  # type: ignore[name-defined]
 _browser_lock = asyncio.Lock()
 
 
 async def launch_browser(
-    executable_path: str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    executable_path: Optional[str] = None,
     headless: bool = True,
 ) -> "PlaywrightBrowser":  # type: ignore[name-defined]
     """Return a shared Playwright browser instance across all scraper calls."""
     global _browser
+    if executable_path and not os.path.exists(executable_path):
+        executable_path = None
+    if not executable_path:
+        # Check standard local paths if not specified
+        for candidate in [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+        ]:
+            if os.path.exists(candidate):
+                executable_path = candidate
+                break
+
     async with _browser_lock:
         if _browser is None or not _browser.is_connected():
             try:
@@ -75,15 +90,18 @@ async def launch_browser(
                     "playwright is required for browser fallback: pip install playwright"
                 ) from exc
             pw = await async_playwright().start()
-            _browser = await pw.chromium.launch(
-                headless=headless,
-                executable_path=executable_path,
-                args=[
+            launch_kwargs = {
+                "headless": headless,
+                "args": [
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                 ],
-            )
+            }
+            if executable_path:
+                launch_kwargs["executable_path"] = executable_path
+
+            _browser = await pw.chromium.launch(**launch_kwargs)
     return _browser
 
 
