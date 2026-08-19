@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+httpx
+curl-cffi
+tenacity
+beautifulsoup4
+playwright
+pydantic
+python-dotenv
