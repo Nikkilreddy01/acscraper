@@ -100,6 +100,73 @@ def _parse_indeed_mosaic(html: str) -> list[JobListing]:
     return out
 
 
+async def _playwright_fetch_indeed(
+    query: str = "software engineer",
+    location: str = "Remote",
+    timeout: int = 30,
+) -> list[JobListing]:
+    """Fallback: render Indeed in headless browser and scrape job cards."""
+    jobs: list[JobListing] = []
+    browser = None
+    context = None
+    try:
+        browser = await launch_browser()
+        context = await browser.new_context(
+            user_agent=UA,
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        page = await context.new_page()
+
+        url = f"https://www.indeed.com/jobs?q={query.replace(' ', '+')}&l={location.replace(' ', '+')}"
+        await page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+        await asyncio.sleep(3)
+
+        html = await page.content()
+        parsed = _parse_indeed_mosaic(html)
+        if parsed:
+            jobs = parsed
+        else:
+            cards = await page.locator("[data-jk], .slider_container, .job_seen_beacon").all()
+            for idx, card in enumerate(cards):
+                try:
+                    title_el = card.locator("h2.jobTitle, a.jcs-JobTitle").first
+                    title = _clean(await title_el.inner_text()) if await title_el.count() > 0 else ""
+                    if not title:
+                        continue
+                    company_el = card.locator("[data-testid='company-name'], .companyName").first
+                    company = _clean(await company_el.inner_text()) if await company_el.count() > 0 else "Employer"
+                    loc_el = card.locator("[data-testid='text-location'], .companyLocation").first
+                    loc = _clean(await loc_el.inner_text()) if await loc_el.count() > 0 else location
+                    jk = await card.get_attribute("data-jk") or str(idx)
+                    
+                    jobs.append(
+                        JobListing(
+                            id=f"indeed_pw_{jk}",
+                            title=title,
+                            company=company,
+                            location=loc,
+                            url=f"https://www.indeed.com/viewjob?jk={jk}",
+                            source="indeed",
+                            posted_at="Recent",
+                            description_snippet="Software position on Indeed",
+                        )
+                    )
+                except Exception:
+                    pass
+
+        await context.close()
+        return jobs
+    except Exception as exc:
+        logger.warning("Indeed Playwright error: %s", exc)
+        if context:
+            try:
+                await context.close()
+            except Exception:
+                pass
+        return []
+
+
 class IndeedScraper(BaseScraper):
     source_name = "indeed"
 
@@ -118,6 +185,7 @@ class IndeedScraper(BaseScraper):
     async def fetch(self, _session=None) -> list[JobListing]:
         jobs: list[JobListing] = []
 
+        # Strategy 1: Fast TLS impersonation
         async with stealth_session(impersonate="chrome120", proxy=self.proxy) as client:
             for page_idx in range(self.max_pages):
                 start = page_idx * 10
@@ -128,11 +196,20 @@ class IndeedScraper(BaseScraper):
                     "start": start,
                 }
                 try:
-                    resp = await client.get(url, params=params, timeout=20)
+                    resp = await client.get(url, params=params, timeout=15)
                     if resp.status_code == 200:
                         parsed = _parse_indeed_mosaic(resp.text)
                         jobs.extend(parsed)
                 except Exception as exc:
                     logger.warning("Indeed curl_cffi error: %s", exc)
 
-        return jobs
+        if jobs:
+            return jobs
+
+        # Strategy 2: Headless Playwright Fallback
+        try:
+            pw_jobs = await _playwright_fetch_indeed(self.query, self.location)
+            return pw_jobs
+        except Exception as exc:
+            logger.warning("Indeed Playwright fallback failed: %s", exc)
+            return []
